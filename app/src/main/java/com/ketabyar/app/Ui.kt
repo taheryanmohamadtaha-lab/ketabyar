@@ -89,7 +89,7 @@ fun App(store: Store, books: List<Book>) {
                     when (val r = route) {
                         is Route.Home -> HomeScreen(books, store, go)
                         is Route.Settings -> SettingsScreen(store, books.size)
-                        is Route.Search -> SearchScreen(books, go)
+                        is Route.Search -> SearchScreen(books, store, go)
                         is Route.Bookmarks -> BookmarksScreen(books, store, go)
                         is Route.Detail -> books.find { it.id == r.id }?.let { DetailScreen(it, store, go) }
                         is Route.Reader -> books.find { it.id == r.id }?.let { ReaderScreen(it, r.sec, store, go) }
@@ -366,21 +366,79 @@ fun BookmarksScreen(books: List<Book>, store: Store, go: (Route) -> Unit) {
 }
 
 @Composable
-fun SearchScreen(books: List<Book>, go: (Route) -> Unit) {
+fun SearchScreen(books: List<Book>, store: Store, go: (Route) -> Unit) {
     var q by remember { mutableStateOf("") }
+    var online by remember { mutableStateOf<List<OnlineBook>?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var trigger by remember { mutableIntStateOf(0) }
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    LaunchedEffect(trigger) {
+        if (trigger > 0) {
+            loading = true; error = null; online = null
+            try { online = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Online.search(q.trim()) } }
+            catch (e: Exception) { error = "اتصال به اینترنت برقرار نشد یا سرویس پاسخ نداد. دوباره تلاش کنید." }
+            loading = false
+        }
+    }
     val res = if (q.isBlank()) emptyList() else books.filter {
         it.title.contains(q, true) || it.titleEn.contains(q, true) || it.author.contains(q, true) || it.category.contains(q, true)
     }
+    fun localMatch(o: OnlineBook) = books.find {
+        val a = it.titleEn.lowercase().trim(); val b = o.title.lowercase().trim()
+        a.isNotEmpty() && b.isNotEmpty() && (a == b || a.startsWith(b) || b.startsWith(a))
+    }
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            OutlinedTextField(value = q, onValueChange = { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("نام کتاب، نویسنده یا موضوع") },
+            OutlinedTextField(value = q, onValueChange = { q = it; online = null; error = null }, singleLine = true,
+                modifier = Modifier.fillMaxWidth(), placeholder = { Text("نام فارسی/انگلیسی کتاب، نویسنده یا موضوع") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) })
         }
-        if (q.isNotBlank() && res.isEmpty()) item {
-            Text("کتابی با این مشخصات در کتابخانه پیدا نشد. جست‌وجوی آنلاین در نسخه‌های بعد اضافه می‌شود.", color = Color.Gray)
-        }
+        if (res.isNotEmpty()) item { Title("در کتابخانه") }
         items(res) { b -> BookRow(b) { go(Route.Detail(b.id)) } }
+        if (q.isNotBlank()) item {
+            Button(onClick = { trigger++ }, enabled = !loading, modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Color.Black)) {
+                Text(if (loading) "در حال جست‌وجو…" else "جست‌وجوی آنلاین کتاب")
+            }
+        }
+        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Amber) }
+        error?.let { e -> item { Text(e, color = Color(0xFFE57373)) } }
+        online?.let { list ->
+            if (list.isEmpty()) item { Text("در منابع آنلاین کتابی با این مشخصات پیدا نشد. عبارت دیگری را امتحان کنید.", color = Color.Gray) }
+            else {
+                item { Title("نتایج آنلاین") }
+                item { Text("این نتایج فقط مشخصات کتاب هستند و خلاصه معتبر محسوب نمی‌شوند.", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
+                items(list) { o ->
+                    val local = localMatch(o)
+                    val key = o.title + " — " + o.authors
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(o.title, fontWeight = FontWeight.Bold)
+                            Text(listOf(o.authors, o.year).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                            Text("منبع: ${o.source}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (local != null) Button(onClick = { go(Route.Detail(local.id)) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Color.Black)) { Text("خلاصه موجود است") }
+                                else OutlinedButton(onClick = { store.toggleRequest(key) }) {
+                                    Text(if (key in store.requests) "✓ در فهرست درخواست‌ها" else "درخواست افزودن خلاصه")
+                                }
+                                if (o.link.isNotBlank()) TextButton(onClick = { uri.openUri(o.link) }) { Text("مشاهده منبع") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (store.requests.isNotEmpty()) {
+            item { Title("درخواست‌های من") }
+            items(store.requests.toList()) { r ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(r, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    IconButton(onClick = { store.toggleRequest(r) }) { Icon(Icons.Filled.Bookmark, "حذف", tint = Amber) }
+                }
+            }
+        }
     }
 }
 
@@ -395,6 +453,6 @@ fun SettingsScreen(store: Store, count: Int) {
         Slider(value = store.fontSize, onValueChange = { store.updateFont(it) }, valueRange = 14f..30f)
         Text("فاصله خطوط: ${"%.1f".format(store.lineH)}")
         Slider(value = store.lineH, onValueChange = { store.updateLine(it) }, valueRange = 1.4f..2.4f)
-        Text("نسخه برنامه: 0.1.0 · تعداد کتاب‌های کتابخانه: $count", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        Text("نسخه برنامه: 0.2.0 · تعداد کتاب‌های کتابخانه: $count", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
     }
 }

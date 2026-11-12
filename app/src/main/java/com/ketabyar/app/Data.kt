@@ -19,9 +19,13 @@ data class Book(
 
 object Repo {
     fun load(ctx: Context): List<Book> {
-        val text = ctx.assets.open("content/catalog.json").bufferedReader().use { it.readText() }
-        val arr = JSONObject(text).getJSONArray("books")
-        return (0 until arr.length()).map { parse(arr.getJSONObject(it)) }
+        val files = (ctx.assets.list("content/books") ?: emptyArray()).filter { it.endsWith(".json") }.sorted()
+        return files.mapNotNull { f ->
+            try {
+                val text = ctx.assets.open("content/books/$f").bufferedReader().use { it.readText() }
+                parse(JSONObject(text))
+            } catch (e: Exception) { null } // فایل خراب نباید کل برنامه را از کار بیندازد
+        }
     }
 
     private fun strs(a: JSONArray): List<String> = (0 until a.length()).map { a.getString(it) }
@@ -63,6 +67,11 @@ class Store(ctx: Context) {
     fun toggleSaved(id: String) {
         if (id in saved) saved.remove(id) else saved.add(id)
         p.edit().putStringSet("saved", saved.toSet()).apply()
+    }
+    val requests = mutableStateListOf<String>().apply { addAll(p.getStringSet("req", emptySet())!!) }
+    fun toggleRequest(key: String) {
+        if (key in requests) requests.remove(key) else requests.add(key)
+        p.edit().putStringSet("req", requests.toSet()).apply()
     }
     fun setLast(id: String, sec: Int) { p.edit().putString("lastBook", id).putInt("lastSec_$id", sec).apply() }
     fun lastBook(): String? = p.getString("lastBook", null)
