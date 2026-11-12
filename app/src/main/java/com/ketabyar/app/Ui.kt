@@ -389,12 +389,12 @@ fun SettingsScreen(store: Store, count: Int) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Title("تنظیمات")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("حالت شب"); Switch(checked = store.dark, onCheckedChange = { store.setDark(it) })
+            Text("حالت شب"); Switch(checked = store.dark, onCheckedChange = { store.updateDark(it) })
         }
         Text("اندازه فونت مطالعه: ${store.fontSize.roundToInt()}")
-        Slider(value = store.fontSize, onValueChange = { store.setFont(it) }, valueRange = 14f..30f)
+        Slider(value = store.fontSize, onValueChange = { store.updateFont(it) }, valueRange = 14f..30f)
         Text("فاصله خطوط: ${"%.1f".format(store.lineH)}")
-        Slider(value = store.lineH, onValueChange = { store.setLine(it) }, valueRange = 1.4f..2.4f)
+        Slider(value = store.lineH, onValueChange = { store.updateLine(it) }, valueRange = 1.4f..2.4f)
         Text("نسخه برنامه: 0.1.0 · تعداد کتاب‌های کتابخانه: $count", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
     }
 }

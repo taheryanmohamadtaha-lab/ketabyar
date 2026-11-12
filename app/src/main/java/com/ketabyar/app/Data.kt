@@ -52,9 +52,9 @@ class Store(ctx: Context) {
     val bookmarks = mutableStateListOf<String>().apply { addAll(p.getStringSet("bm", emptySet())!!) }
     val saved = mutableStateListOf<String>().apply { addAll(p.getStringSet("saved", emptySet())!!) }
 
-    fun setDark(v: Boolean) { dark = v; p.edit().putBoolean("dark", v).apply() }
-    fun setFont(v: Float) { fontSize = v; p.edit().putFloat("font", v).apply() }
-    fun setLine(v: Float) { lineH = v; p.edit().putFloat("line", v).apply() }
+    fun updateDark(v: Boolean) { dark = v; p.edit().putBoolean("dark", v).apply() }
+    fun updateFont(v: Float) { fontSize = v; p.edit().putFloat("font", v).apply() }
+    fun updateLine(v: Float) { lineH = v; p.edit().putFloat("line", v).apply() }
 
     fun toggleBookmark(key: String) {
         if (key in bookmarks) bookmarks.remove(key) else bookmarks.add(key)
