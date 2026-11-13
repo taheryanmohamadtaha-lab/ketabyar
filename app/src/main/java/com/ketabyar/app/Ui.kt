@@ -1,6 +1,11 @@
 package com.ketabyar.app
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +54,7 @@ sealed class Route {
     object Settings : Route()
     object Search : Route()
     object Bookmarks : Route()
+    object Saved : Route()
     data class Detail(val id: String) : Route()
     data class Reader(val id: String, val sec: Int) : Route()
     data class Contents(val id: String) : Route()
@@ -91,6 +97,7 @@ fun App(store: Store, books: List<Book>) {
                         is Route.Settings -> SettingsScreen(store, books.size)
                         is Route.Search -> SearchScreen(books, store, go)
                         is Route.Bookmarks -> BookmarksScreen(books, store, go)
+                        is Route.Saved -> SavedScreen(books, store, go)
                         is Route.Detail -> books.find { it.id == r.id }?.let { DetailScreen(it, store, go) }
                         is Route.Reader -> books.find { it.id == r.id }?.let { ReaderScreen(it, r.sec, store, go) }
                         is Route.Contents -> books.find { it.id == r.id }?.let { ContentsScreen(it, store, go) }
@@ -171,6 +178,16 @@ fun HomeScreen(books: List<Book>, store: Store, go: (Route) -> Unit) {
                     Icon(Icons.Filled.Search, null, tint = Amber)
                     Spacer(Modifier.width(10.dp))
                     Text("جست‌وجوی کتاب یا نویسنده…", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        item {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth().clickable { go(Route.Saved) }) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Star, null, tint = Amber)
+                    Spacer(Modifier.width(10.dp))
+                    Text("بخش‌های مورد علاقه (${store.passages.size})", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -262,8 +279,8 @@ fun ReaderScreen(b: Book, startSec: Int, store: Store, go: (Route) -> Unit) {
     val n = b.sections.size
     var sec by remember { mutableIntStateOf(startSec.coerceIn(0, n - 1)) }
     LaunchedEffect(sec) { store.setLast(b.id, sec) }
-    val key = "${b.id}|$sec"
-    val marked = key in store.bookmarks
+    val bmKey = "${b.id}|$sec"
+    val marked = bmKey in store.bookmarks
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { go(Route.Detail(b.id)) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "بازگشت") }
@@ -271,15 +288,42 @@ fun ReaderScreen(b: Book, startSec: Int, store: Store, go: (Route) -> Unit) {
                 Text(b.title, style = MaterialTheme.typography.bodySmall)
                 Text(b.sections[sec].title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             }
-            IconButton(onClick = { store.toggleBookmark(key) }) {
+            IconButton(onClick = { store.toggleBookmark(bmKey) }) {
                 Icon(if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, "نشانک", tint = Amber)
             }
         }
         key(sec) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
-                Text(b.sections[sec].text, fontSize = store.fontSize.sp, lineHeight = (store.fontSize * store.lineH).sp)
+            val paras = remember(sec) { b.sections[sec].text.split("\n\n").filter { it.isNotBlank() } }
+            var active by remember { mutableIntStateOf(-1) }
+            val ctx = LocalContext.current
+            val clip = LocalClipboardManager.current
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+                Text("برای ذخیره، کپی یا ارسال، روی هر پاراگراف بزنید.", fontSize = 11.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 6.dp))
+                paras.forEachIndexed { i, para ->
+                    val pk = "${b.id}|$sec|$i"
+                    val isSaved = pk in store.passages
+                    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(10.dp))
+                        .background(if (isSaved) Amber.copy(alpha = 0.18f) else if (active == i) MaterialTheme.colorScheme.surface else Color.Transparent)
+                        .clickable { active = if (active == i) -1 else i }.padding(8.dp)) {
+                        Text(para, fontSize = store.fontSize.sp, lineHeight = (store.fontSize * store.lineH).sp)
+                        if (active == i) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { store.togglePassage(pk) }) {
+                                Icon(if (isSaved) Icons.Filled.Star else Icons.Filled.StarBorder, null, tint = Amber, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp)); Text(if (isSaved) "حذف از علاقه‌ها" else "ذخیره", fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { copyQuote(ctx, clip, quoteOf(b, para)) }) {
+                                Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp)); Text("کپی", fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { shareQuote(ctx, quoteOf(b, para)) }) {
+                                Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp)); Text("ارسال", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (sec > 0) OutlinedButton(onClick = { sec -= 1 }) { Text("بخش قبل") }
                     if (sec < n - 1) Button(onClick = { sec += 1 },
                         colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Color.Black)) { Text("بخش بعد") }
@@ -453,6 +497,54 @@ fun SettingsScreen(store: Store, count: Int) {
         Slider(value = store.fontSize, onValueChange = { store.updateFont(it) }, valueRange = 14f..30f)
         Text("فاصله خطوط: ${"%.1f".format(store.lineH)}")
         Slider(value = store.lineH, onValueChange = { store.updateLine(it) }, valueRange = 1.4f..2.4f)
-        Text("نسخه برنامه: 0.2.0 · تعداد کتاب‌های کتابخانه: $count", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        Text("نسخه برنامه: 0.3.0 · تعداد کتاب‌های کتابخانه: $count", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+    }
+}
+
+
+fun quoteOf(b: Book, text: String) = "«$text»\n— ${b.title}، ${b.author}\n(کتاب‌یار زندگی)"
+
+fun copyQuote(ctx: android.content.Context, clip: androidx.compose.ui.platform.ClipboardManager, text: String) {
+    clip.setText(AnnotatedString(text))
+    Toast.makeText(ctx, "کپی شد", Toast.LENGTH_SHORT).show()
+}
+
+fun shareQuote(ctx: android.content.Context, text: String) {
+    val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
+    ctx.startActivity(Intent.createChooser(i, "ارسال با"))
+}
+
+@Composable
+fun SavedScreen(books: List<Book>, store: Store, go: (Route) -> Unit) {
+    val ctx = LocalContext.current
+    val clip = LocalClipboardManager.current
+    Column(Modifier.fillMaxSize()) {
+        TopBar("بخش‌های مورد علاقه") { go(Route.Home) }
+        if (store.passages.isEmpty()) Text("هنوز بخشی ذخیره نکرده‌اید. هنگام مطالعه روی یک پاراگراف بزنید و «ذخیره» را انتخاب کنید.",
+            Modifier.padding(20.dp), color = Color.Gray)
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(store.passages.toList()) { key ->
+                val parts = key.split("|")
+                val b = books.find { it.id == parts.getOrNull(0) }
+                val sec = parts.getOrNull(1)?.toIntOrNull() ?: -1
+                val idx = parts.getOrNull(2)?.toIntOrNull() ?: -1
+                val para = b?.sections?.getOrNull(sec)?.text?.split("\n\n")?.filter { it.isNotBlank() }?.getOrNull(idx)
+                if (b != null && para != null) {
+                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text("${b.title} · ${b.sections[sec].title}", style = MaterialTheme.typography.bodySmall, color = Amber)
+                            Spacer(Modifier.height(6.dp))
+                            Text(para, style = MaterialTheme.typography.bodyMedium, lineHeight = 26.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { copyQuote(ctx, clip, quoteOf(b, para)) }) { Text("کپی") }
+                                TextButton(onClick = { shareQuote(ctx, quoteOf(b, para)) }) { Text("ارسال") }
+                                TextButton(onClick = { go(Route.Reader(b.id, sec)) }) { Text("باز کردن در کتاب") }
+                                TextButton(onClick = { store.togglePassage(key) }) { Text("حذف") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

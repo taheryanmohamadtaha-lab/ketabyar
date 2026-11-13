@@ -73,6 +73,14 @@ class Store(ctx: Context) {
         if (key in requests) requests.remove(key) else requests.add(key)
         p.edit().putStringSet("req", requests.toSet()).apply()
     }
+    val passages = mutableStateListOf<String>().apply {
+        val raw = p.getString("pp", "") ?: ""
+        if (raw.isNotEmpty()) addAll(raw.split(","))
+    }
+    fun togglePassage(key: String) {
+        if (key in passages) passages.remove(key) else passages.add(key)
+        p.edit().putString("pp", passages.joinToString(",")).apply()
+    }
     fun setLast(id: String, sec: Int) { p.edit().putString("lastBook", id).putInt("lastSec_$id", sec).apply() }
     fun lastBook(): String? = p.getString("lastBook", null)
     fun lastSec(id: String): Int = p.getInt("lastSec_$id", 0)
